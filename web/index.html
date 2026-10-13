@@ -1,0 +1,198 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>심부전 진료지침 RAG</title>
+<style>
+  :root {
+    --bg: #f6f5f1; --card: #ffffff; --ink: #1d2430; --muted: #657083; --line: #e2dfd6;
+    --accent: #b3261e; --accent-soft: #fbeceb; --good: #1d6b4a; --good-soft: #e6f3ec;
+    --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #14171c; --card: #1c2027; --ink: #e8e9ec; --muted: #9aa3b2; --line: #2b313b;
+      --accent: #ef7b73; --accent-soft: #3a2220; --good: #6fcf9f; --good-soft: #1b3027;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font: 16px/1.6 "Noto Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif;
+  }
+  .wrap { max-width: 1120px; margin: 0 auto; padding: 32px 16px 64px; }
+  header h1 { margin: 0 0 4px; font-size: 26px; letter-spacing: -0.02em; }
+  header p { margin: 0; color: var(--muted); }
+  .badges { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+  .badge { font: 12px var(--mono); color: var(--muted); border: 1px solid var(--line); border-radius: 999px; padding: 3px 10px; background: var(--card); }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 20px; margin-top: 22px; }
+  textarea {
+    width: 100%; min-height: 84px; resize: vertical; padding: 12px 14px; font: inherit; color: var(--ink);
+    background: var(--bg); border: 1px solid var(--line); border-radius: 10px;
+  }
+  textarea:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
+  .chip { font: inherit; font-size: 13px; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 999px; padding: 5px 12px; cursor: pointer; }
+  .chip:hover { border-color: var(--accent); color: var(--accent); }
+  .row { display: flex; flex-wrap: wrap; align-items: center; gap: 16px; justify-content: space-between; }
+  label.opt { display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--muted); cursor: pointer; }
+  button.go { font: inherit; font-weight: 600; color: #fff; background: var(--accent); border: 0; border-radius: 10px; padding: 10px 26px; cursor: pointer; }
+  button.go:disabled { opacity: .5; cursor: wait; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-top: 22px; }
+  @media (max-width: 820px) { .grid { grid-template-columns: 1fr; } }
+  .col { margin-top: 0; display: flex; flex-direction: column; }
+  .col h2 { margin: 0; font-size: 17px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .tag { font: 11px var(--mono); padding: 2px 8px; border-radius: 6px; }
+  .tag.base { background: var(--accent-soft); color: var(--accent); }
+  .tag.enh { background: var(--good-soft); color: var(--good); }
+  .desc { margin: 4px 0 0; font-size: 13px; color: var(--muted); }
+  .time { margin-left: auto; font: 12px var(--mono); color: var(--muted); }
+  .answer { margin-top: 14px; white-space: pre-wrap; word-break: keep-all; overflow-wrap: anywhere; }
+  .answer .cite { color: var(--good); font-weight: 600; }
+  .status { margin-top: 14px; color: var(--muted); display: flex; align-items: center; gap: 10px; }
+  .spin { width: 16px; height: 16px; border: 2px solid var(--line); border-top-color: var(--accent); border-radius: 50%; animation: s .8s linear infinite; }
+  @keyframes s { to { transform: rotate(360deg); } }
+  .err { color: var(--accent); }
+  h3 { margin: 20px 0 8px; font-size: 13px; color: var(--muted); font-weight: 600; text-transform: none; }
+  details { border-top: 1px solid var(--line); padding: 8px 0; }
+  summary { cursor: pointer; font-size: 14px; list-style: none; display: flex; gap: 10px; align-items: baseline; }
+  summary::-webkit-details-marker { display: none; }
+  summary .pos { font: 12px var(--mono); color: var(--muted); }
+  summary a { color: var(--accent); text-decoration: none; font: 12px var(--mono); }
+  summary a:hover { text-decoration: underline; }
+  summary .snip { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; min-width: 0; }
+  details p { margin: 8px 0 4px; font-size: 13.5px; color: var(--muted); white-space: pre-wrap; }
+  footer { margin-top: 28px; font-size: 12.5px; color: var(--muted); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>심부전 진료지침 RAG</h1>
+    <p>2022 대한심부전학회 진료지침 PDF를 검색해 답변합니다. 같은 질문에 대한 두 파이프라인의 결과를 나란히 비교해 보세요.</p>
+    <div class="badges" id="badges"></div>
+  </header>
+
+  <section class="card">
+    <textarea id="q" maxlength="500" placeholder="진료지침에 대해 질문해 보세요. 예: HFrEF 환자에서 베타차단제의 역할은?"></textarea>
+    <div class="chips" id="chips"></div>
+    <div class="row">
+      <div style="display:flex;gap:18px;flex-wrap:wrap">
+        <label class="opt"><input type="checkbox" id="cmp" checked> Baseline과 비교</label>
+        <label class="opt"><input type="checkbox" id="compress"> 컨텍스트 압축 (느림)</label>
+      </div>
+      <button class="go" id="go">질문하기</button>
+    </div>
+  </section>
+
+  <div class="grid" id="results" hidden>
+    <section class="card col" id="col-enhanced">
+      <h2><span class="tag enh">ENHANCED</span>검색 개선 <span class="time" id="t-enhanced"></span></h2>
+      <p class="desc">후보 20개 검색 → Reranker 상위 5개 → 처음·끝 재배치 → 출처 인용 프롬프트</p>
+      <div id="body-enhanced"></div>
+    </section>
+    <section class="card col" id="col-baseline">
+      <h2><span class="tag base">BASELINE</span>기본 검색 <span class="time" id="t-baseline"></span></h2>
+      <p class="desc">유사도 상위 5개 → 기본 프롬프트</p>
+      <div id="body-baseline"></div>
+    </section>
+  </div>
+
+  <footer>참고용 데모입니다. 답변은 문서 검색 결과에 기반한 자동 생성이며 의학적 조언이 아닙니다. 근거 쪽번호는 PDF 뷰어 기준입니다.</footer>
+</div>
+
+<script>
+const EXAMPLES = [
+  "HFrEF 환자에서 베타차단제의 역할은?",
+  "심부전 진단에서 NT-proBNP는 어떻게 활용하나요?",
+  "비판막성 심방세동 환자의 경구 항응고제 사용 기준은?",
+  "SGLT2 억제제는 어떤 환자에게 권고되나요?",
+  "수면무호흡과 심부전의 관계는?",
+];
+
+const $ = (id) => document.getElementById(id);
+const esc = (s) => s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+function renderAnswer(text) {
+  return esc(text)
+    .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+    .replace(/(\[출처[^\]]*\])/g, '<span class="cite">$1</span>');
+}
+
+let PDF_ENABLED = true;
+
+function renderDocs(docs) {
+  return docs.map((d) => {
+    const snip = esc(d.text.replace(/\s+/g, " ").slice(0, 80));
+    return `<details>
+      <summary><span class="pos">#${d.position}</span>${PDF_ENABLED ? `<a href="/pdf#page=${d.page}" target="_blank" rel="noopener">PDF p.${d.page}</a>` : `<span class="pos">PDF p.${d.page}</span>`}<span class="snip">${snip}</span></summary>
+      <p>${esc(d.text)}</p>
+    </details>`;
+  }).join("");
+}
+
+function setLoading(mode, text) {
+  $("body-" + mode).innerHTML = `<div class="status"><div class="spin"></div>${esc(text)}</div>`;
+  $("t-" + mode).textContent = "";
+}
+
+async function ask(mode, query, compress) {
+  const res = await fetch("/api/ask", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ query, mode, compress }),
+  });
+  if (!res.ok) {
+    let msg = (await res.text()).slice(0, 200);
+    try { const j = JSON.parse(msg); if (typeof j.detail === "string") msg = j.detail; } catch (_) {}
+    throw new Error(msg);
+  }
+  const r = await res.json();
+  $("t-" + mode).textContent = `${r.seconds}s · 컨텍스트 ${r.context_chars}자`;
+  $("body-" + mode).innerHTML =
+    `<div class="answer">${renderAnswer(r.answer)}</div><h3>검색된 근거 (${r.docs.length})</h3>${renderDocs(r.docs)}`;
+}
+
+async function run() {
+  const query = $("q").value.trim();
+  if (!query) { $("q").focus(); return; }
+  const compare = $("cmp").checked, compress = $("compress").checked;
+  $("go").disabled = true;
+  $("results").hidden = false;
+  $("col-baseline").hidden = !compare;
+  $("results").style.gridTemplateColumns = compare ? "" : "1fr";
+  setLoading("enhanced", compress ? "검색·압축·생성 중…" : "검색·생성 중…");
+  if (compare) setLoading("baseline", "대기 중…");
+  try {
+    await ask("enhanced", query, compress);
+  } catch (e) {
+    $("body-enhanced").innerHTML = `<p class="err">오류: ${esc(String(e.message))}</p>`;
+  }
+  if (compare) {
+    setLoading("baseline", "검색·생성 중…");
+    try {
+      await ask("baseline", query, false);
+    } catch (e) {
+      $("body-baseline").innerHTML = `<p class="err">오류: ${esc(String(e.message))}</p>`;
+    }
+  }
+  $("go").disabled = false;
+}
+
+$("chips").innerHTML = EXAMPLES.map((e, i) => `<button class="chip" data-i="${i}">${esc(e)}</button>`).join("");
+$("chips").addEventListener("click", (ev) => {
+  const b = ev.target.closest(".chip");
+  if (b) { $("q").value = EXAMPLES[+b.dataset.i]; $("q").focus(); }
+});
+$("go").addEventListener("click", run);
+$("q").addEventListener("keydown", (ev) => { if (ev.key === "Enter" && (ev.ctrlKey || ev.metaKey)) run(); });
+
+fetch("/api/info").then((r) => r.json()).then((i) => {
+  PDF_ENABLED = i.pdf !== false;
+  $("badges").innerHTML = [`LLM ${i.llm}`, `Reranker ${i.reranker}`, `${i.chunks} chunks`, i.gpu]
+    .map((t) => `<span class="badge">${esc(t)}</span>`).join("");
+}).catch(() => {});
+</script>
+</body>
+</html>

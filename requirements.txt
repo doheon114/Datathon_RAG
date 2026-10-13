@@ -1,0 +1,25 @@
+# 주요 의존성 (개발 환경에서 확인한 버전 기준, 필요 시 범위를 조정하세요)
+torch>=2.4
+transformers>=4.51
+sentence-transformers>=3
+chromadb>=1.0
+fastapi
+uvicorn
+pydantic>=2
+rank-bm25
+pymupdf
+pypdf
+numpy
+tiktoken
+openai
+langchain-core
+langchain-community
+langchain-classic
+langchain-openai
+langchain-huggingface
+langchain-text-splitters
+# data/ 스크립트(선택)
+pandas
+pyarrow
+streamlit
+plotly
