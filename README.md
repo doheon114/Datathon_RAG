@@ -39,7 +39,7 @@ python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt                 # CUDA 빌드 torch 는 환경에 맞게 따로 설치
 
 export OPENAI_API_KEY=sk-...                    # 임베딩(text-embedding-3-small)에만 사용. 파일에 저장 금지
-python src/8_build_index.py                         # PDF → db/ 인덱스 (최초 1회)
+python src/8_build_index.py                     # PDF → db/ 인덱스 (최초 1회)
 
 cd emr && npm install && npm run build && cd ..  # EMR 화면 빌드 (서버가 /emr 로 서빙)
 
@@ -47,6 +47,7 @@ export EMR_PASSWORD='원하는 비밀번호'           # 없으면 실행마다 
 CUDA_VISIBLE_DEVICES=0 python src/9_notebook_web.py --port 8800
 ```
 
+- 모든 명령은 프로젝트 루트에서 실행합니다(경로는 루트 기준).
 - 노트북 화면 `http://localhost:8800/`, EMR 화면 `http://localhost:8800/emr/`
 - 14B 모델 + reranker 를 올릴 GPU(약 30GB 이상)가 필요합니다. `--model` 로 다른 모델 지정, `--public` 은 외부 노출용(요청 제한·대기열 적용).
 
