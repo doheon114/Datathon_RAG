@@ -364,6 +364,7 @@ async function ask(query) {
           t.partial += ev.t;
           t.cited = [...new Set([...t.partial.matchAll(/\[(\d+)\]/g)].map((m) => +m[1]))];
         } else if (ev.type === "done") {
+          if (ev.passages) t.passages = ev.passages;
           t.answer = ev.answer; t.cited = ev.cited; t.marks = ev.marks || {}; t.refused = ev.refused; t.seconds = ev.seconds; t.done = true;
           if (ev.refused && ev.hint) t.answer = ev.answer + "\n\n" + ev.hint;
         } else if (ev.type === "error") { t.error = ev.message; }

@@ -3,7 +3,7 @@ import type { Encounter, GuidelineInsert, Note, Order, Patient, PatientBundle, R
 import { currentUser, loadBundle, loadCohort, peekBundle, peekPatients, placeholderBundle } from '../api/emrApi'
 import { todayISO } from '../data/rng'
 
-export type DialogType = 'summary' | 'memo' | 'cvr' | 'setting' | 'func' | 'logout' | 'vitals' | 'images' | 'visit' | 'history' | 'problems' | 'newnote' | 'neworder' | 'patients' | 'data' | 'editnote' | 'delnote' | 'noteview' | 'notesettings'
+export type DialogType = 'summary' | 'memo' | 'cvr' | 'setting' | 'func' | 'logout' | 'vitals' | 'images' | 'visit' | 'history' | 'problems' | 'newnote' | 'neworder' | 'patients' | 'data' | 'editnote' | 'delnote' | 'noteview' | 'notesettings' | 'cohort'
 export interface DialogState { type: DialogType; data?: unknown }
 export interface Toast { id: number; msg: string; kind: 'info' | 'warn' }
 export interface Settings { fontSize: number; compact: boolean }

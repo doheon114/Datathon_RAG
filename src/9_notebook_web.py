@@ -5,17 +5,18 @@
  - 자료 우선순위: ESC 2026 > 대한심부전학회(KSHF) 2022 > AHA/ACC/HFSA 2022. 자료별로 후보를 따로 뽑아 순위에 반영하고,
    발췌문 번호는 우선순위(자료 순서) → 관련도 순으로 매긴다. 프롬프트도 같은 우선순위로 인용하도록 지시한다.
  - 거절: Reranker 최고 점수가 REFUSE_BELOW 미만이면 LLM 을 호출하지 않고 "자료에서 찾을 수 없음"으로 응답
- - 생성: 로컬 LLM(Qwen3-14B, thinking 끔) 토큰 스트리밍
+ - 생성: 로컬 LLM(Qwen3.8-27B 4-bit, thinking 끔) 토큰 스트리밍
  - 형광펜: 답변의 각 주장과 가장 잘 맞는 발췌문 문장(표는 행)만 골라(evidence.py) 근거 패널·원문 뷰어에 표시
 
 사전 준비: 8_build_index.py 로 ./db/chromadb 의 'notebook' 컬렉션과 ./db/pages.json 생성, export OPENAI_API_KEY=sk-... (질의 임베딩 전용)
-실행: CUDA_VISIBLE_DEVICES=1 .venv/bin/python src/9_notebook_web.py [--port 8800] [--model Qwen/Qwen3-14B] [--public]
+실행: CUDA_VISIBLE_DEVICES=1 .venv/bin/python src/9_notebook_web.py [--port 8800] [--model Qwen/Qwen3.8-27B] [--bf16] [--public]
  - --public: 외부 공개용 보호 (질문 IP당 10분에 12회, 대기열 6개, 원문 쪽 조회 500회 제한)
  - --no-viewer: 원문 PDF 뷰어(/api/pdfpage, /api/locate) 끄기
  - emr/dist 가 있으면 병원 EMR 시연 화면을 /emr 로 함께 서빙한다 (emr/ 에서 npm run build)
    EMR 로그인: 비밀번호는 환경변수 EMR_PASSWORD (없으면 실행할 때마다 임시 비밀번호를 만들어 콘솔에 출력). 로그인 세션 쿠키가 없으면 /emr/hf/ (환자 데이터) 는 401.
 """
 import hashlib
+from itertools import zip_longest
 import hmac
 import json
 import logging
@@ -45,7 +46,7 @@ from pdf_view import PdfStore
 from pydantic import BaseModel, Field
 from rank_bm25 import BM25Okapi
 from sentence_transformers import CrossEncoder
-from transformers import (AutoModelForCausalLM, AutoTokenizer, StoppingCriteria, StoppingCriteriaList,
+from transformers import (AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig, StoppingCriteria, StoppingCriteriaList,
                           TextIteratorStreamer)
 
 if not os.environ.get("OPENAI_API_KEY"):
@@ -53,17 +54,18 @@ if not os.environ.get("OPENAI_API_KEY"):
 
 argv = sys.argv[1:]
 PORT = int(argv[argv.index("--port") + 1]) if "--port" in argv else 8800
-MODEL_ID = argv[argv.index("--model") + 1] if "--model" in argv else "Qwen/Qwen3-14B"
+MODEL_ID = argv[argv.index("--model") + 1] if "--model" in argv else "Qwen/Qwen3.8-27B"
+LOAD_BF16 = "--bf16" in argv  # 기본은 4-bit(NF4) 양자화 로딩, --bf16 이면 양자화 없이 bf16
 PUBLIC = "--public" in argv
 VIEWER = "--no-viewer" not in argv
 VIEW_LIMIT = 500  # --public: IP당 600초에 쪽 이미지/위치 조회 횟수 (스크롤하면 쪽마다 1회)
 RERANKER_ID = "BAAI/bge-reranker-v2-m3"
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # 프로젝트 루트(src/ 의 상위)
-POOL, TOP_K = 30, 6  # 후보 수(의미/키워드 각각), 최종 발췌문 수
+POOL, TOP_K = 30, 9  # 후보 수(의미/키워드 각각), 최종 발췌문 수
 # 자료 우선순위(작을수록 우선) 와 재순위 점수(logit)에 더하는 가산점. 관련도가 비슷하면 우선순위 높은 자료가 앞선다.
 SOURCE_PRIORITY = {"esc2026": 1, "ksh2022": 2, "aha2022": 3}
 SOURCE_BONUS = {"esc2026": 1.5, "ksh2022": 0.75, "aha2022": 0.0}
-SOURCE_QUOTA = {"esc2026": 2, "ksh2022": 2, "aha2022": 1}  # 자료별 우선 배정 자리 수 (TOP_K 안에서)
+SOURCE_QUOTA = {"esc2026": 4, "ksh2022": 3, "aha2022": 2}  # 자료별 우선 배정 자리 수 (TOP_K 안에서)
 QUOTA_MIN_PROB = 0.3  # 이 관련도(0~1) 이상일 때만 우선 배정
 PER_SOURCE = 10  # 자료마다 의미/키워드 후보를 따로 뽑아 언어(한국어 질문 → 한국어 자료) 편향으로 다른 자료가 밀리지 않게 한다
 REFUSE_BELOW = 0.10  # Reranker 최고 점수가 이보다 낮으면 자료에 근거 없음으로 간주
@@ -108,8 +110,8 @@ SYSTEM_PROMPT = f"""당신은 사용자가 제공한 자료(소스)만을 근거
 규칙
 1. 오직 발췌문에 적힌 내용만 사용합니다. 배경지식, 추측, 일반 상식으로 보충하지 않습니다.
 2. 모든 사실 문장 끝에 근거가 된 발췌문 번호를 [1] 형식으로 붙입니다. 여러 개면 [1][3]처럼 이어 씁니다. 번호는 반드시 대괄호로 씁니다(예: …권고한다. [1]). 1, ¹, (1) 형태는 쓰지 않습니다. 번호가 없는 지침 문장은 쓰지 않습니다.
-3. 발췌문에 질문의 답이 없거나 불충분하면 아는 내용을 덧붙이지 말고 "{REFUSAL}"라고만 답합니다. 일부만 답할 수 있으면 확인되는 부분만 답하고, 나머지는 자료에 없다고 밝힙니다.
-4. 자료 우선순위는 ① 2026 ESC → ② 대한심부전학회(KSHF) 2022 → ③ 2022 AHA/ACC/HFSA 입니다(발췌문 번호도 이 순서로 매겨져 있습니다). 같은 주제가 여러 자료에 있으면 우선순위가 높은 자료의 내용을 중심으로 쓰고 그 번호를 먼저 인용합니다. 낮은 우선순위 자료는 보완 정보이거나 내용이 다를 때만 덧붙이고, 다를 때는 우선순위가 높은 자료를 기준으로 쓰되 차이를 자료명과 함께 짧게 밝힙니다.
+3. 모든 발췌문을 통틀어 질문의 답이 전혀 없을 때만 아는 내용을 덧붙이지 말고 "{REFUSAL}"라고만 답합니다. 어느 자료의 발췌문이든 일부라도 답할 수 있으면 거절하지 말고 확인되는 부분만 답하고, 나머지는 자료에 없다고 밝힙니다.
+4. 자료 우선순위는 ① 2026 ESC → ② 대한심부전학회(KSHF) 2022 → ③ 2022 AHA/ACC/HFSA 입니다(발췌문 번호도 이 순서로 매겨져 있습니다). 같은 주제가 여러 자료에 있으면 우선순위가 높은 자료의 내용을 중심으로 쓰고 그 번호를 먼저 인용합니다. 낮은 우선순위 자료는 보완 정보이거나 내용이 다를 때만 덧붙이고, 다를 때는 우선순위가 높은 자료를 기준으로 쓰되 차이를 자료명과 함께 짧게 밝힙니다. 영어 자료(ESC, AHA)도 한국어 자료와 똑같이 읽고, 질문에 답하는 내용이 있으면 우선순위에 따라 인용합니다. 반대로 질문과 직접 관련이 없는 발췌문은 우선순위가 높아도 쓰거나 인용하지 않습니다.
 5. 권고 등급(Class, Level of Evidence)과 수치·용량·약어는 발췌문 그대로 정확히 옮깁니다. 영어 자료는 한국어로 옮겨 설명하되 약어와 고유명사는 원문을 유지합니다.
 6. 발췌문이 표(| 로 구분된 마크다운)이면 같은 행의 항목끼리만 연결해 읽습니다. 열 제목(예: Class, Level, 용량)과 값이 어긋나지 않게 옮깁니다.
 7. 질문과 같은 언어(한국어)로 간결하게, 필요하면 글머리 기호로 정리하고, 사용자가 표를 요청한 경우에만 마크다운 표를 씁니다(표의 각 행 끝에도 근거 번호 [n]을 붙입니다). 서론이나 맺음말 없이 답만 씁니다."""
@@ -178,7 +180,10 @@ DOC_SRC = np.array([m["source"] for m in DOC_META])
 print(f"[load] LLM {MODEL_ID} / reranker {RERANKER_ID} / {N_CHUNKS} chunks / sources {list(SOURCE_NAMES)}", flush=True)
 reranker = CrossEncoder(RERANKER_ID, device="cuda", max_length=1024)
 tokenizer = AutoTokenizer.from_pretrained(MODEL_ID)
-model = AutoModelForCausalLM.from_pretrained(MODEL_ID, dtype=torch.bfloat16, device_map="cuda").eval()
+model = AutoModelForCausalLM.from_pretrained(
+    MODEL_ID, dtype=torch.bfloat16, device_map="cuda",
+    quantization_config=None if LOAD_BF16 else BitsAndBytesConfig(load_in_4bit=True, bnb_4bit_quant_type="nf4", bnb_4bit_use_double_quant=True, bnb_4bit_compute_dtype=torch.bfloat16),
+).eval()
 
 
 # ---------- 검색: 의미 + 키워드 -> RRF -> Rerank ----------
@@ -192,12 +197,13 @@ def retrieve(query: str, ids: list[str], extra: tuple = (), alt: tuple = ()):
         qv = embeddings.embed_query(q)
         bm = bm25.get_scores(tokenize(q))
         for sid in ids:
-            res = col.query(query_embeddings=[qv], n_results=PER_SOURCE, where={"source": sid}, include=["documents", "metadatas"])
+            n_cand = PER_SOURCE * (1 if PAGES[sid].get("lang") == "ko" else 2)  # 영어 자료는 번역 질문으로도 어긋나기 쉬워 후보를 더 넓게 모은다
+            res = col.query(query_embeddings=[qv], n_results=n_cand, where={"source": sid}, include=["documents", "metadatas"])
             for rank, (doc, meta) in enumerate(zip(res["documents"][0], res["metadatas"][0])):
                 fused[doc] += 1 / (60 + rank)
                 info[doc] = meta
             idx = np.where(DOC_SRC == sid)[0]
-            top = idx[np.argsort(-bm[idx])[:PER_SOURCE]]
+            top = idx[np.argsort(-bm[idx])[:n_cand]]
             for rank, i in enumerate(i for i in top if bm[i] > 0):
                 fused[DOC_TEXT[i]] += 1 / (60 + rank)
                 info[DOC_TEXT[i]] = DOC_META[i]
@@ -210,13 +216,38 @@ def retrieve(query: str, ids: list[str], extra: tuple = (), alt: tuple = ()):
     logit = rerank(query)
     for a in alt:
         logit = np.maximum(logit, rerank(a))
+    # 영어 자료는 청크가 길고 여러 주제가 섞여 있어, 질문과 주제만 걸친 문단이 위로 올라오고 정작 권고 문장이 있는 문단은 밀린다.
+    # 그래서 영어 자료 후보는 문장(표는 행) 단위로도 점수를 매겨 청크 점수와 함께 쓴다(둘 중 높은 쪽).
+    bonus = np.array([SOURCE_BONUS.get(info[t]["source"], 0.0) for t in cands])
+    ulogit = np.full(len(cands), -99.0)
+    unit_txt, unit_owner = [], []
+    for k, t in enumerate(cands):
+        if PAGES[info[t]["source"]].get("lang") != "ko":
+            for a, b in split_units(t, info[t].get("kind", "text")):
+                unit_txt.append(t[a:b])
+                unit_owner.append(k)
+    if unit_txt:
+        for q in dict.fromkeys((query, *alt)):
+            for k, sc in zip(unit_owner, reranker.predict([(q, u) for u in unit_txt], batch_size=32, show_progress_bar=False, activation_fn=torch.nn.Identity())):
+                ulogit[k] = max(ulogit[k], float(sc))
+    logit = np.maximum(logit, ulogit)
     prob = 1 / (1 + np.exp(-logit))
-    adj = logit + np.array([SOURCE_BONUS.get(info[t]["source"], 0.0) for t in cands])
-    # 우선순위 자료부터 자리를 먼저 배정한다(관련도 하한 이상일 때만). 남은 자리는 가산점 반영 점수순으로 채운다.
+    adj = logit + bonus
+    # 우선순위 자료부터 자리를 먼저 배정한다(관련도 하한 이상일 때만). 청크 점수 순위와 문장 단위 순위에서 번갈아 고르고,
+    # 남은 자리는 가산점 반영 점수순으로 채운다.
     ranked = [int(i) for i in np.argsort(-adj)]
+    ranked_u = [int(i) for i in np.argsort(-(ulogit + bonus))]
     chosen: list[int] = []
     for sid in sorted(ids, key=lambda x: SOURCE_PRIORITY.get(x, 9)):
-        chosen += [i for i in ranked if info[cands[i]]["source"] == sid and prob[i] >= QUOTA_MIN_PROB][:SOURCE_QUOTA.get(sid, 1)]
+        by_chunk = [i for i in ranked if info[cands[i]]["source"] == sid and prob[i] >= QUOTA_MIN_PROB]
+        by_unit = [i for i in ranked_u if info[cands[i]]["source"] == sid and ulogit[i] > -50 and 1 / (1 + np.exp(-ulogit[i])) >= QUOTA_MIN_PROB]
+        picked: list[int] = []
+        for i in (x for pair in zip_longest(by_chunk, by_unit) for x in pair):
+            if i is not None and i not in picked:
+                picked.append(i)
+            if len(picked) >= SOURCE_QUOTA.get(sid, 1):
+                break
+        chosen += picked
     chosen += [i for i in ranked if i not in chosen][:max(0, TOP_K - len(chosen))]
     chosen = sorted(chosen[:TOP_K], key=lambda i: (SOURCE_PRIORITY.get(info[cands[i]]["source"], 9), -adj[i]))
     best_raw = float(prob.max())
@@ -340,6 +371,21 @@ def normalize_citations(answer: str, n: int):
     answer = re.sub(r"(?<=다\.)([1-9])(?=\s|$)", lambda m: f"[{m.group(1)}]" if int(m.group(1)) <= n else m.group(0), answer)
     answer = re.sub(r"\[(\d+)\]", lambda m: m.group(0) if 1 <= int(m.group(1)) <= n else "", answer)
     return answer.strip(), sorted({int(x) for x in re.findall(r"\[(\d+)\]", answer)})
+
+
+def renumber_by_appearance(answer: str, passages: list[dict], cited: list[int], marks: dict):
+    """답변에 처음 나오는 순서대로 인용 번호를 [1], [2], … 로 다시 매긴다(발췌문 번호는 우선순위 순이라 4번부터 나올 수 있다).
+    인용되지 않은 발췌문은 그 뒤 번호를 원래 순서대로 받는다. 반환: (답변, 새 번호의 발췌문 목록, 인용 번호, marks)."""
+    order = []
+    for m in re.finditer(r"\[(\d+)\]", answer):
+        k = int(m.group(1))
+        if 1 <= k <= len(passages) and k not in order:
+            order.append(k)
+    full = order + [k for k in range(1, len(passages) + 1) if k not in order]
+    new = {old: i + 1 for i, old in enumerate(full)}
+    answer = re.sub(r"\[(\d+)\]", lambda m: f"[{new[int(m.group(1))]}]" if int(m.group(1)) in new else m.group(0), answer)
+    plist = [{**passages[old - 1], "n": new[old], "score": round(passages[old - 1]["score"], 4)} for old in full]
+    return answer, plist, sorted(new[c] for c in cited if c in new), {new[int(k)]: v for k, v in marks.items() if int(k) in new}
 
 
 # 환자 정보를 서술한 문장("이 환자는 …")에는 지침 번호를 붙이지 않는다. 모델이 어겨도 여기서 지운다.
@@ -560,7 +606,7 @@ def answer_stream(query: str, ids: list[str], summary: str = "", context: str = 
                     terms = expand_terms(f"{query} {q_focus}")
                     q_en = plan.get("question_en") or (to_english(q_focus) if HANGUL.search(q_focus) else "")
                     alts = tuple(dict.fromkeys(x for x in (q_en, query[:400]) if x and x != q_focus))  # 영어 질문 + 원문(영어로 물었을 때 한국어 자료용)
-                    passages = retrieve(q_focus, ids, tuple(plan["queries"]) + ((terms,) if terms else ()), alts)
+                    passages = retrieve(q_focus, ids, tuple(plan["queries"]) + ((terms,) if terms else ()) + ((q_en,) if q_en else ()), alts)  # 영어 질문으로도 후보를 모아야 영어 자료(ESC/AHA)가 잡힌다
                     best = passages[0]["best_raw"] if passages else 0.0
                 weak = plan["wants_guideline"] and best < REFUSE_BELOW
                 if weak and not plan["wants_summary"]:  # 지침 근거가 없고 요약 요청도 아니면 답하지 않는다
@@ -612,7 +658,11 @@ def answer_stream(query: str, ids: list[str], summary: str = "", context: str = 
                     traceback.print_exc()  # 형광펜 선택이 실패해도 답변은 그대로 보낸다
                     marks = {}
                 is_refusal = REFUSAL in answer and not cited and not plan["wants_summary"] and plan["wants_guideline"]
-                outbox.put(event(type="done", answer=answer, cited=cited, marks=marks, refused=is_refusal,
+                final = {}
+                if cited and passages:  # 인용 번호를 답변에 나온 순서대로 다시 매긴다(근거 패널도 같은 번호로 교체)
+                    answer, new_passages, cited, marks = renumber_by_appearance(answer, passages, cited, marks)
+                    final = {"passages": new_passages}
+                outbox.put(event(type="done", answer=answer, cited=cited, marks=marks, refused=is_refusal, **final,
                                  hint=hint_for(query, context if (context.strip() or record) else "") if is_refusal else "", seconds=round(time.time() - t0, 1)))
         except Exception as e:  # noqa: BLE001
             outbox.put(event(type="error", message=f"처리 중 오류가 발생했습니다: {type(e).__name__}"))

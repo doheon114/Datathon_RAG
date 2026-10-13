@@ -22,13 +22,14 @@ export default function PatientInfoPanel() {
     ['환자번호', <b key="m" className="text-white">{p.mrn}</b>],
     ['성별/나이', `${p.sex === 'M' ? '남' : '여'} / ${p.ageLabel}`],
     ['생년월일', p.birth ? p.birth.replace(/-/g, '.') : '- (비식별)'],
-    ['키/체중', hasBody(p) ? `${p.heightCm} cm / ${p.weightKg} kg` : '- (기록 없음)'],
+    ['키/체중', hasBody(p) ? `${p.heightCm} cm / ${p.weightKg} kg` : p.weightKg > 0 ? `- / ${p.weightKg} kg (키 기록 없음)` : '- (기록 없음)'],
     ['BMI / BSA', hasBody(p) ? `${bmi(p).toFixed(1)} / ${bsa(p).toFixed(2)} ㎡` : '-'],
     ['혈액형', `${p.bloodType}`],
     ['진료과', p.dept],
     ['담당의', p.attending],
     ['구분', <span key="s" className="tag" style={{ background: p.status === '입원' ? '#d23a30' : '#2f86d6' }}>{p.status}{p.ward ? ` · ${p.ward}` : ''}</span>],
-    ...(p.group === 'hf' ? ([['입원일', p.admitDate ? p.admitDate.replace(/-/g, '.') : '-'], ['퇴원 형태', <b key="o" className={p.outcome === '사망' ? 'text-emr-bad' : 'text-white'}>{p.outcome ?? '-'}</b>], ['자료', 'MEDS 심부전 코호트(비식별)']] as [string, React.ReactNode][]) : []),
+    ...(p.group === 'hf' ? ([['입원일', p.admitDate ? p.admitDate.replace(/-/g, '.') : '-'], ['퇴원 형태', <b key="o" className={p.outcome === '사망' ? 'text-emr-bad' : 'text-white'}>{p.outcome ?? '-'}</b>], ['자료', 'MEDS 심부전 코호트(비식별)'],
+      ...(p.cohortFeatures ? [['전처리', <button key="cf" type="button" className="btn btn-fn" style={{ background: 'linear-gradient(180deg, #1fa6a6, #1fa6a6bb)' }} onClick={() => openDialog('cohort')}>전처리 요약 보기</button>]] : [])] as [string, React.ReactNode][]) : []),
   ]
   return (
     <div className="flex w-[232px] shrink-0 flex-col border-r border-black bg-emr-panel">

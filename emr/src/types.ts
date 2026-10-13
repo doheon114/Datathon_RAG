@@ -19,6 +19,15 @@ export interface Medication {
   since: string
 }
 
+/** preprocessed_data/features.csv 에서 가져온 전처리 요약 (furosemide 투여 심부전 환자 2명) */
+export interface CohortFeatures {
+  source: string
+  stayId: string
+  t0: string
+  sections: { title: string; rows: { k: string; v: string; note: string }[] }[]
+  notes: string[]
+}
+
 export interface Patient {
   id: string
   mrn: string
@@ -46,6 +55,7 @@ export interface Patient {
   outcome?: string
   admitDate?: string
   counts?: { notes: number; orders: number; labs: number }
+  cohortFeatures?: CohortFeatures
 }
 
 export type EncounterType = '외래' | '입원' | '수술' | '응급'

@@ -26,11 +26,12 @@
 |---|---|
 | `src/1`~`7_*.py` | 단계별 튜토리얼(PDF→텍스트→분할→임베딩→벡터스토어→검색→생성→간단 웹) |
 | `src/8_build_index.py` | 본 인덱스 생성: 정제 · 큰 청크 · 표 마크다운 · Chroma `notebook` 컬렉션 · `db/pages.json` |
-| `src/9_notebook_web.py` | FastAPI 서버: 의미검색 + BM25 → RRF → `bge-reranker-v2-m3` → 로컬 Qwen3-14B 스트리밍 답변 |
+| `src/9_notebook_web.py` | FastAPI 서버: 의미검색 + BM25 → RRF → `bge-reranker-v2-m3` → 로컬 Qwen3.8-27B(4-bit) 스트리밍 답변 |
 | `src/evidence.py`, `src/pdf_view.py` | 답변 주장별 근거 문장/표 행 선택, 쪽 이미지·형광펜 좌표 |
 | `web/notebook.html` | NotebookLM식 화면 (`/`) |
 | `emr/` | React + TypeScript + Vite 병원 EMR 데모 (`/emr/`), 자세한 내용은 `emr/README.md` |
-| `data/` | (선택) MEDS 심부전 코호트를 EMR 번들로 바꾸는 스크립트. **데이터 자체는 포함하지 않음** |
+| `emr/public/hf/` | EMR 「심부전」 탭에 나오는 시연 환자 2명(HF017, HF023)의 번들 JSON. 합성 데이터셋 기반이며 아래 「데이터에 관하여」 참고 |
+| `data/` | (선택) 이전 MEDS 코호트(102명) 변환 스크립트. **원본 데이터는 포함하지 않음** |
 
 ## 실행
 
@@ -49,11 +50,11 @@ CUDA_VISIBLE_DEVICES=0 python src/9_notebook_web.py --port 8800
 
 - 모든 명령은 프로젝트 루트에서 실행합니다(경로는 루트 기준).
 - 노트북 화면 `http://localhost:8800/`, EMR 화면 `http://localhost:8800/emr/`
-- 14B 모델 + reranker 를 올릴 GPU(약 30GB 이상)가 필요합니다. `--model` 로 다른 모델 지정, `--public` 은 외부 노출용(요청 제한·대기열 적용).
+- Qwen3.8-27B(4-bit, 약 18GB) + reranker 를 올릴 GPU(약 24GB 이상)가 필요합니다. `--bf16` 으로 양자화를 끄거나 `--model` 로 다른 모델을 지정할 수 있고, `--public` 은 외부 노출용(요청 제한·대기열 적용)입니다. 답변 한 건에 수십 초 걸립니다.
 
 ## 데이터에 관하여
 
-- **저장소에는 환자 데이터가 없습니다.** EMR의 「시연 10」 탭 환자는 `emr/src/data`에서 시드 고정으로 만든 가상 인물입니다.
-- 「심부전 102」 탭은 별도로 준비한 MEDS 형식 코호트(`data/*.parquet`)를 `data/build_hf_emr.py`로 변환해 `emr/public/hf/`에 두어야 나타나며, 이 저장소에는 포함하지 않았습니다. 없으면 해당 탭만 비어 있습니다.
+- EMR의 「시연 10」 탭 환자는 `emr/src/data`에서 시드 고정으로 만든 가상 인물입니다.
+- 「심부전」 탭의 환자 2명(`emr/public/hf/HF017.json`, `HF023.json`)은 합성(비식별) 데이터셋에서 가져온 시연용 번들입니다. 투약·검사·활력징후·섭취/배설은 데이터셋의 기록이고, 체액상태·체중 추이·키·NT-proBNP·흉부 X선과 furosemide 시나리오(HF017: 울혈 + 주사 투여, HF023: 울혈 + 미투여)는 시연용 합성/설정이며 기록에 「시연용 합성」으로 표시했습니다. 원본 데이터셋 파일과 전처리 코드는 포함하지 않았습니다.
 - 인덱스(`db/`), 청크·임베딩, PDF 추출 텍스트도 PDF 저작물에서 파생되므로 올리지 않았습니다. `8_build_index.py`로 직접 만드세요.
 - 이 프로젝트는 연구·시연용이며 실제 진료 판단을 대체하지 않습니다.

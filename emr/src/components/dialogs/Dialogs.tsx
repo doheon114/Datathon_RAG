@@ -100,6 +100,31 @@ export default function Dialogs() {
         </Modal>
       )
 
+    case 'cohort': {
+      const cf = p.cohortFeatures
+      if (!cf) return null
+      return (
+        <Modal title={`전처리 요약 (features.csv) — ${p.name}`} onClose={close} width={760} footer={<Btn onClick={close}>닫기</Btn>}>
+          <div className="mb-2 text-[12px]">furosemide 투여 시점 <b className="text-white">t0 = {cf.t0}</b> <span className="text-emr-sub">· stay {cf.stayId}</span></div>
+          {cf.sections.map((s) => (
+            <div key={s.title} className="mb-2">
+              <div className="mb-[2px] text-[11.5px] font-bold text-emr-sub">{s.title}</div>
+              <table className="w-full border-collapse text-[12px]">
+                <tbody>{s.rows.map((r) => (
+                  <tr key={r.k} className="border-b border-[#4a5870]">
+                    <td className="w-[150px] border-r border-[#4a5870] bg-[#2b3750] px-2 py-[2px] text-emr-sub">{r.k}</td>
+                    <td className="w-[210px] px-2 py-[2px]" style={r.v === '미측정' || r.v === '기록 없음' ? { color: '#8a97ad' } : undefined}>{r.v}</td>
+                    <td className="px-2 py-[2px] text-[11px] text-emr-sub">{r.note}</td>
+                  </tr>
+                ))}</tbody>
+              </table>
+            </div>
+          ))}
+          <ul className="mt-1 list-disc pl-4 text-[11px] text-emr-sub">{cf.notes.map((n) => <li key={n}>{n}</li>)}<li>{cf.source}</li></ul>
+        </Modal>
+      )
+    }
+
     case 'memo':
       return (
         <Modal title={`메모 — ${p.name}`} onClose={close} width={460} footer={<><Btn onClick={close}>닫기</Btn><Btn blue onClick={() => { try { localStorage.setItem('emr.memo', memo) } catch { /* 저장 불가 */ } toast('메모를 저장했습니다.'); close() }}>저장</Btn></>}>

@@ -102,7 +102,7 @@ export function GuidelineProvider({ children }: { children: ReactNode }) {
         onPassages: (passages, refused) => update(id, (t) => ({ ...t, passages, refused })),
         onRecord: (hits) => update(id, (t) => ({ ...t, recordHits: hits })),
         onToken: (tok) => update(id, (t) => ({ ...t, partial: t.partial + tok })),
-        onDone: (d) => { update(id, (t) => ({ ...t, status: 'done', answer: d.answer, cited: d.cited, marks: d.marks, refused: d.refused, seconds: d.seconds, hint: d.hint })); resolve() },
+        onDone: (d) => { update(id, (t) => ({ ...t, status: 'done', answer: d.answer, passages: d.passages ?? t.passages, cited: d.cited, marks: d.marks, refused: d.refused, seconds: d.seconds, hint: d.hint })); resolve() },
         onError: (msg) => { update(id, (t) => ({ ...t, status: 'error', error: msg })); resolve() },
       }, signal, ctx).finally(resolve)
     })).finally(() => setBusyCount((c) => c - 1))

@@ -40,7 +40,7 @@ export default function EMRLayout() {
         </div>
       </div>
       <div className="hdr-navy flex h-[20px] shrink-0 items-center gap-4 border-t border-black px-2 text-[10.5px] text-emr-sub">
-        <span>{bundle.patient.group === 'hf' ? '심부전 코호트(MEDS, 비식별) — 날짜는 상대 일자로 재배치, 체액상태·furosemide 투약·체중·NT-proBNP·흉부X선은 시연용 합성값' : '가상 데이터 시연 — 실제 환자정보가 아닙니다'}</span>
+        <span>{bundle.patient.group === 'hf' ? '심부전 코호트(MEDS, 비식별) — 날짜는 상대 일자로 재배치. 투약·검사·활력징후·I&O 는 실제 기록, 체액상태·체중 추이·키·NT-proBNP·흉부X선은 시연용 합성값(기록에 표시)' : '가상 데이터 시연 — 실제 환자정보가 아닙니다'}</span>
         <span>환자 <b className="text-white">{bundle.patient.name}</b> ({bundle.patient.mrn})</span>
         <span>선택 진료 <b className="text-white">{selectedEncounter ? `${selectedEncounter.date.replace(/-/g, '.')} ${selectedEncounter.type} · ${selectedEncounter.dept}` : '-'}</b></span>
         <span className="ml-auto">진료기록 {bundle.notes.length} · 오더 {bundle.orders.length} · 검사 {bundle.labs.length}</span>

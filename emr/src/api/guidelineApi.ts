@@ -39,6 +39,8 @@ export interface Marks {
 
 export interface DoneEvent {
   answer: string
+  /** 서버가 인용 번호를 답변에 나온 순서로 다시 매긴 발췌문 목록(있으면 이전 목록을 대체한다) */
+  passages?: Passage[]
   cited: number[]
   marks: Record<string, Marks>
   refused: boolean
@@ -97,7 +99,7 @@ export async function askGuideline(query: string, sources: string[], h: AskHandl
         if (ev.type === 'passages') h.onPassages(ev.passages, ev.refused)
         else if (ev.type === 'record') h.onRecord?.(ev.hits ?? [])
         else if (ev.type === 'token') h.onToken(ev.t)
-        else if (ev.type === 'done') h.onDone({ answer: ev.answer, cited: ev.cited, marks: ev.marks ?? {}, refused: ev.refused, seconds: ev.seconds, hint: ev.hint || undefined })
+        else if (ev.type === 'done') h.onDone({ answer: ev.answer, passages: ev.passages, cited: ev.cited, marks: ev.marks ?? {}, refused: ev.refused, seconds: ev.seconds, hint: ev.hint || undefined })
         else if (ev.type === 'error') h.onError(ev.message)
       }
     }
