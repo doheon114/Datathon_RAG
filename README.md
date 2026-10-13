@@ -31,7 +31,6 @@
 | `web/notebook.html` | NotebookLM식 화면 (`/`) |
 | `emr/` | React + TypeScript + Vite 병원 EMR 데모 (`/emr/`), 자세한 내용은 `emr/README.md` |
 | `emr/public/hf/` | EMR 「심부전」 탭에 나오는 시연 환자 2명(HF017, HF023)의 번들 JSON. 합성 데이터셋 기반이며 아래 「데이터에 관하여」 참고 |
-| `data/` | (선택) 이전 MEDS 코호트(102명) 변환 스크립트. **원본 데이터는 포함하지 않음** |
 
 ## 실행
 

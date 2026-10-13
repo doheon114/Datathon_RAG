@@ -20,8 +20,3 @@ langchain-huggingface
 langchain-text-splitters
 bitsandbytes            # Qwen3.8-27B 4-bit 로딩
 flash-linear-attention  # Qwen3.8(선형 어텐션) 가속 커널
-# data/ 스크립트(선택)
-pandas
-pyarrow
-streamlit
-plotly

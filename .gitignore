@@ -6,8 +6,6 @@ chunks.json
 chunk_embeddings.npy
 heart_failure_2022.txt
 db/
-data/*.parquet
-data/*.csv
 emr/public/hf/*
 !emr/public/hf/HF017.json
 !emr/public/hf/HF023.json
