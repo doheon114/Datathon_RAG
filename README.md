@@ -24,10 +24,10 @@
 
 | 파일 | 역할 |
 |---|---|
-| `1`~`7_*.py` | 단계별 튜토리얼(PDF→텍스트→분할→임베딩→벡터스토어→검색→생성→간단 웹) |
-| `8_build_index.py` | 본 인덱스 생성: 정제 · 큰 청크 · 표 마크다운 · Chroma `notebook` 컬렉션 · `db/pages.json` |
-| `9_notebook_web.py` | FastAPI 서버: 의미검색 + BM25 → RRF → `bge-reranker-v2-m3` → 로컬 Qwen3-14B 스트리밍 답변 |
-| `evidence.py`, `pdf_view.py` | 답변 주장별 근거 문장/표 행 선택, 쪽 이미지·형광펜 좌표 |
+| `src/1`~`7_*.py` | 단계별 튜토리얼(PDF→텍스트→분할→임베딩→벡터스토어→검색→생성→간단 웹) |
+| `src/8_build_index.py` | 본 인덱스 생성: 정제 · 큰 청크 · 표 마크다운 · Chroma `notebook` 컬렉션 · `db/pages.json` |
+| `src/9_notebook_web.py` | FastAPI 서버: 의미검색 + BM25 → RRF → `bge-reranker-v2-m3` → 로컬 Qwen3-14B 스트리밍 답변 |
+| `src/evidence.py`, `src/pdf_view.py` | 답변 주장별 근거 문장/표 행 선택, 쪽 이미지·형광펜 좌표 |
 | `web/notebook.html` | NotebookLM식 화면 (`/`) |
 | `emr/` | React + TypeScript + Vite 병원 EMR 데모 (`/emr/`), 자세한 내용은 `emr/README.md` |
 | `data/` | (선택) MEDS 심부전 코호트를 EMR 번들로 바꾸는 스크립트. **데이터 자체는 포함하지 않음** |
@@ -39,12 +39,12 @@ python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt                 # CUDA 빌드 torch 는 환경에 맞게 따로 설치
 
 export OPENAI_API_KEY=sk-...                    # 임베딩(text-embedding-3-small)에만 사용. 파일에 저장 금지
-python 8_build_index.py                         # PDF → db/ 인덱스 (최초 1회)
+python src/8_build_index.py                         # PDF → db/ 인덱스 (최초 1회)
 
 cd emr && npm install && npm run build && cd ..  # EMR 화면 빌드 (서버가 /emr 로 서빙)
 
 export EMR_PASSWORD='원하는 비밀번호'           # 없으면 실행마다 임시 비밀번호를 콘솔에 출력
-CUDA_VISIBLE_DEVICES=0 python 9_notebook_web.py --port 8800
+CUDA_VISIBLE_DEVICES=0 python src/9_notebook_web.py --port 8800
 ```
 
 - 노트북 화면 `http://localhost:8800/`, EMR 화면 `http://localhost:8800/emr/`

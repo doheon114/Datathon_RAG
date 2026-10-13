@@ -1,6 +1,6 @@
 """PyPDFLoader로 PDF 전체 텍스트를 추출해 txt 파일로 저장한다.
 
-실행: .venv/bin/python 1_pdf_to_txt.py
+실행: .venv/bin/python src/1_pdf_to_txt.py
 """
 import glob
 import logging

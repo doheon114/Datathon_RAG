@@ -3,7 +3,7 @@
 비교: baseline(유사도 top-5 + 기본 프롬프트) vs enhanced(k=20 -> rerank top-5 -> LongContextReorder + 출처 인용 프롬프트)
 
 사전 준비: 4_vectorstore.py 로 ./db/chromadb 생성, export OPENAI_API_KEY=sk-... (쿼리 임베딩에만 사용, LLM 은 로컬)
-실행: CUDA_VISIBLE_DEVICES=1 .venv/bin/python 6_generator_enhancement.py ["질문"] [--compress] [--model Qwen/Qwen3-8B]
+실행: CUDA_VISIBLE_DEVICES=1 .venv/bin/python src/6_generator_enhancement.py ["질문"] [--compress] [--model Qwen/Qwen3-8B]
 """
 import logging
 import os

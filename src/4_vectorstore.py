@@ -1,7 +1,7 @@
 """PDF를 토큰 기준으로 분할해 Chroma 벡터 저장소(./db/chromadb)에 저장하고 유사도 검색한다.
 
 사전 준비: export OPENAI_API_KEY=sk-...
-실행: .venv/bin/python 4_vectorstore.py ["검색 질문"] [--rebuild]
+실행: .venv/bin/python src/4_vectorstore.py ["검색 질문"] [--rebuild]
  - 저장소가 이미 있으면 임베딩을 다시 만들지 않고 불러온다. --rebuild 는 삭제 후 재생성.
 """
 import glob

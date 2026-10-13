@@ -9,7 +9,7 @@
  - 형광펜: 답변의 각 주장과 가장 잘 맞는 발췌문 문장(표는 행)만 골라(evidence.py) 근거 패널·원문 뷰어에 표시
 
 사전 준비: 8_build_index.py 로 ./db/chromadb 의 'notebook' 컬렉션과 ./db/pages.json 생성, export OPENAI_API_KEY=sk-... (질의 임베딩 전용)
-실행: CUDA_VISIBLE_DEVICES=1 .venv/bin/python 9_notebook_web.py [--port 8800] [--model Qwen/Qwen3-14B] [--public]
+실행: CUDA_VISIBLE_DEVICES=1 .venv/bin/python src/9_notebook_web.py [--port 8800] [--model Qwen/Qwen3-14B] [--public]
  - --public: 외부 공개용 보호 (질문 IP당 10분에 12회, 대기열 6개, 원문 쪽 조회 500회 제한)
  - --no-viewer: 원문 PDF 뷰어(/api/pdfpage, /api/locate) 끄기
  - emr/dist 가 있으면 병원 EMR 시연 화면을 /emr 로 함께 서빙한다 (emr/ 에서 npm run build)
@@ -58,7 +58,7 @@ PUBLIC = "--public" in argv
 VIEWER = "--no-viewer" not in argv
 VIEW_LIMIT = 500  # --public: IP당 600초에 쪽 이미지/위치 조회 횟수 (스크롤하면 쪽마다 1회)
 RERANKER_ID = "BAAI/bge-reranker-v2-m3"
-HERE = os.path.dirname(os.path.abspath(__file__))
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # 프로젝트 루트(src/ 의 상위)
 POOL, TOP_K = 30, 6  # 후보 수(의미/키워드 각각), 최종 발췌문 수
 # 자료 우선순위(작을수록 우선) 와 재순위 점수(logit)에 더하는 가산점. 관련도가 비슷하면 우선순위 높은 자료가 앞선다.
 SOURCE_PRIORITY = {"esc2026": 1, "ksh2022": 2, "aha2022": 3}
@@ -146,17 +146,17 @@ CONTEXT_RULES = """
    - 발췌문에 근거가 없는 환자별 처방·용량 지시는 만들지 않습니다."""
 
 # ---------- 자료 / 인덱스 로드 ----------
-with open(os.path.join(HERE, "db", "pages.json"), encoding="utf-8") as fh:
+with open(os.path.join(ROOT, "db", "pages.json"), encoding="utf-8") as fh:
     PAGES = json.load(fh)  # {source_id: {name, lang, pages: {"72": text}}}
 SOURCE_NAMES = {sid: v["name"] for sid, v in PAGES.items()}
 
 embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
-vectorstore = Chroma(collection_name="notebook", embedding_function=embeddings, persist_directory=os.path.join(HERE, "db", "chromadb"))
+vectorstore = Chroma(collection_name="notebook", embedding_function=embeddings, persist_directory=os.path.join(ROOT, "db", "chromadb"))
 _all = vectorstore._collection.get(include=["documents", "metadatas"])
 DOC_TEXT, DOC_META = _all["documents"], _all["metadatas"]
 N_CHUNKS = len(DOC_TEXT)
 TEXT2IDX = {t: i for i, t in enumerate(DOC_TEXT)}
-pdfs = PdfStore({sid: os.path.join(HERE, v["file"]) for sid, v in PAGES.items() if v.get("file")})
+pdfs = PdfStore({sid: os.path.join(ROOT, v["file"]) for sid, v in PAGES.items() if v.get("file")})
 SRC_CHUNKS, SRC_TABLES = defaultdict(int), defaultdict(int)
 for m in DOC_META:
     SRC_CHUNKS[m["source"]] += 1
@@ -410,7 +410,7 @@ class AskRequest(BaseModel):
 
 @app.get("/", response_class=HTMLResponse)
 def index():
-    with open(os.path.join(HERE, "web", "notebook.html"), encoding="utf-8") as fh:
+    with open(os.path.join(ROOT, "web", "notebook.html"), encoding="utf-8") as fh:
         return fh.read()
 
 
@@ -736,7 +736,7 @@ def emr_logout(response: Response):
 
 
 # 병원 EMR 시연 화면(React 빌드 산출물): /emr — 같은 서버의 /api 를 사용하므로 공개 터널에서도 그대로 동작한다
-EMR_DIST = os.path.join(HERE, "emr", "dist")
+EMR_DIST = os.path.join(ROOT, "emr", "dist")
 if os.path.isdir(EMR_DIST):
     @app.get("/emr")
     def emr_redirect():

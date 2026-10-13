@@ -1,6 +1,6 @@
 """PDF를 RecursiveCharacterTextSplitter로 청크 분할한다 (source/page 메타데이터 유지).
 
-실행: .venv/bin/python 2_text_splitter.py
+실행: .venv/bin/python src/2_text_splitter.py
 """
 import glob
 import logging

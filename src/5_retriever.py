@@ -1,7 +1,7 @@
 """FAISS + 한국어 임베딩(jhgan/ko-sbert-nli) 벡터스토어 Retriever 5종 + 검색 기반 답변 생성.
 
 사전 준비: (생성 단계만) export OPENAI_API_KEY=sk-...
-실행: .venv/bin/python 5_retriever.py ["검색 질문"]
+실행: .venv/bin/python src/5_retriever.py ["검색 질문"]
  - 검색 단계는 키 없이 동작(임베딩은 로컬 CPU). 키가 없으면 마지막 생성 단계는 건너뛴다.
 """
 import glob

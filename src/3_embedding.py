@@ -1,7 +1,7 @@
 """OpenAIEmbeddings로 (1) 튜토리얼 예제 임베딩/코사인 유사도, (2) PDF 청크 임베딩 + 유사도 검색.
 
 사전 준비: export OPENAI_API_KEY=sk-...
-실행: .venv/bin/python 3_embedding.py ["검색 질문"]
+실행: .venv/bin/python src/3_embedding.py ["검색 질문"]
 산출물: chunk_embeddings.npy (청크 x 1536), chunks.json (청크 텍스트 + page 메타데이터)
 """
 import glob

@@ -1,7 +1,7 @@
 """RAG 데모 웹사이트 (FastAPI). Baseline vs Enhanced(rerank + reorder + 출처 인용) 답변을 나란히 비교한다.
 
 사전 준비: 4_vectorstore.py 로 ./db/chromadb 생성, export OPENAI_API_KEY=sk-... (쿼리 임베딩에만 사용, LLM 은 로컬)
-실행: CUDA_VISIBLE_DEVICES=1 .venv/bin/python 7_rag_web.py [--port 8800] [--model Qwen/Qwen3-14B] [--public]
+실행: CUDA_VISIBLE_DEVICES=1 .venv/bin/python src/7_rag_web.py [--port 8800] [--model Qwen/Qwen3-14B] [--public]
  - --public: 외부 공개용 보호 (IP당 10분에 12회 제한, 대기열 6개 제한, 원문 PDF 다운로드 /pdf 비활성화)
 접속: http://<서버>:8800
 """
@@ -45,12 +45,12 @@ PUBLIC = "--public" in argv
 RATE_LIMIT, RATE_WINDOW, MAX_QUEUE = 12, 600, 6  # --public: IP당 600초에 12회, 대기 6개 초과 시 거절
 RERANKER_ID = "BAAI/bge-reranker-v2-m3"
 SOURCE_NAME = "2022 심부전 진료지침"
-HERE = os.path.dirname(os.path.abspath(__file__))
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # 프로젝트 루트(src/ 의 상위)
 
 
 def find_pdf(keyword: str) -> str:
     # 파일명이 NFD로 저장돼 있어 한글 경로를 그대로 쓰면 못 찾는다 -> NFC로 정규화해 비교
-    for f in glob.glob(os.path.join(HERE, "*.pdf")):
+    for f in glob.glob(os.path.join(ROOT, "*.pdf")):
         if keyword in unicodedata.normalize("NFC", f):
             return f
     raise FileNotFoundError(keyword)
@@ -173,7 +173,7 @@ class AskRequest(BaseModel):
 
 @app.get("/", response_class=HTMLResponse)
 def index():
-    with open(os.path.join(HERE, "web", "index.html"), encoding="utf-8") as fh:
+    with open(os.path.join(ROOT, "web", "index.html"), encoding="utf-8") as fh:
         return fh.read()
 
 

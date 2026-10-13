@@ -8,7 +8,7 @@
    너무 긴 표는 행 단위로 나누되 머리글 행을 반복. 본문 텍스트에서는 표 영역을 제외해 중복을 막는다.
 
 사전 준비: export OPENAI_API_KEY=sk-...
-실행: .venv/bin/python 8_build_index.py   (컬렉션이 있으면 지우고 다시 만든다)
+실행: .venv/bin/python src/8_build_index.py   (컬렉션이 있으면 지우고 다시 만든다)
 """
 import glob
 import json

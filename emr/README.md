@@ -5,7 +5,7 @@ React + TypeScript + Vite + Tailwind + react-rnd + Recharts + Lucide.
 
 ## 실행
 - 개발: `npm run dev` (5180, `/api` 는 RAG 서버 8800 으로 프록시)
-- 배포: `npm run build` → `dist/` 를 `../9_notebook_web.py` 가 `/emr` 로 서빙 (같은 서버의 `/api` 사용)
+- 배포: `npm run build` → `dist/` 를 `../src/9_notebook_web.py` 가 `/emr` 로 서빙 (같은 서버의 `/api` 사용)
 
 ## 구조
 - `src/api/emrApi.ts` 데이터 접근 계층(지금은 mock). 백엔드 연결 시 이 파일만 바꾼다.
