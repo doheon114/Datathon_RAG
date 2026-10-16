@@ -13,15 +13,16 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 logging.disable(logging.CRITICAL)  # pypdf의 fontTools 경고 억제
 
 
-def find_pdf(keyword: str) -> str:
+def find_pdf(*keywords: str) -> str:
+    """파일명에 keywords 중 하나가 들어간 PDF (대소문자 무시)."""
     # 파일명이 NFD로 저장돼 있어 한글 경로를 그대로 쓰면 못 찾는다 -> NFC로 정규화해 비교
     for f in glob.glob("*.pdf"):
-        if keyword in unicodedata.normalize("NFC", f):
+        if any(k.lower() in unicodedata.normalize("NFC", f).lower() for k in keywords):
             return f
-    raise FileNotFoundError(keyword)
+    raise FileNotFoundError(" / ".join(keywords))
 
 
-pdf_filepath = find_pdf("심부전학회")
+pdf_filepath = find_pdf("심부전학회", "kshf")
 pages = PyPDFLoader(pdf_filepath).load()
 
 text_splitter = RecursiveCharacterTextSplitter(

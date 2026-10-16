@@ -1,12 +1,11 @@
 """FAISS + 한국어 임베딩(jhgan/ko-sbert-nli) 벡터스토어 Retriever 5종 + 검색 기반 답변 생성.
 
-사전 준비: (생성 단계만) export OPENAI_API_KEY=sk-...
-실행: .venv/bin/python src/5_retriever.py ["검색 질문"]
- - 검색 단계는 키 없이 동작(임베딩은 로컬 CPU). 키가 없으면 마지막 생성 단계는 건너뛴다.
+사전 준비: 없음 (API 키 불필요. 임베딩은 로컬 CPU, 답변 생성은 로컬 LLM)
+실행: CUDA_VISIBLE_DEVICES=0 .venv/bin/python src/5_retriever.py ["검색 질문"] [--model Qwen/Qwen3-8B] [--no-generate]
+ - 검색 단계는 CPU 만으로 동작. --no-generate 를 주면 마지막 답변 생성 단계(로컬 LLM 로딩)는 건너뛴다.
 """
 import glob
 import logging
-import os
 import sys
 import unicodedata
 import warnings
@@ -22,15 +21,20 @@ from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
-query = sys.argv[1] if len(sys.argv) > 1 else "HFrEF 환자에서 베타차단제의 역할은?"
+argv = sys.argv[1:]
+MODEL_ID = argv[argv.index("--model") + 1] if "--model" in argv else "Qwen/Qwen3-8B"
+GENERATE = "--no-generate" not in argv
+positional = [a for i, a in enumerate(argv) if not a.startswith("--") and (i == 0 or argv[i - 1] != "--model")]
+query = positional[0] if positional else "HFrEF 환자에서 베타차단제의 역할은?"
 
 
-def find_pdf(keyword: str) -> str:
+def find_pdf(*keywords: str) -> str:
+    """파일명에 keywords 중 하나가 들어간 PDF (대소문자 무시)."""
     # 파일명이 NFD로 저장돼 있어 한글 경로를 그대로 쓰면 못 찾는다 -> NFC로 정규화해 비교
     for f in glob.glob("*.pdf"):
-        if keyword in unicodedata.normalize("NFC", f):
+        if any(k.lower() in unicodedata.normalize("NFC", f).lower() for k in keywords):
             return f
-    raise FileNotFoundError(keyword)
+    raise FileNotFoundError(" / ".join(keywords))
 
 
 def show(title, docs, idx=0):
@@ -40,7 +44,7 @@ def show(title, docs, idx=0):
 
 
 # ---------- 사전 준비 1: 문서 로드 -> 텍스트 분할 ----------
-data = PyMuPDFLoader(find_pdf("심부전학회")).load()
+data = PyMuPDFLoader(find_pdf("심부전학회", "kshf")).load()
 text_splitter = RecursiveCharacterTextSplitter.from_tiktoken_encoder(
     chunk_size=1000,
     chunk_overlap=200,
@@ -85,11 +89,43 @@ show("score_threshold=0.3", retriever.invoke(query))
 retriever = vectorstore.as_retriever(search_kwargs={"filter": {"format": documents[0].metadata["format"]}})
 show(f"filter format={documents[0].metadata['format']}", retriever.invoke(query))
 
-# ---------- Generation: 검색(MMR) -> 프롬프트 -> ChatOpenAI ----------
-if not os.environ.get("OPENAI_API_KEY"):
-    sys.exit("\nOPENAI_API_KEY 가 없어 답변 생성 단계는 건너뜁니다.")
+# ---------- Generation: 검색(MMR) -> 프롬프트 -> 로컬 LLM (HF transformers) ----------
+if not GENERATE:
+    sys.exit("\n--no-generate: 답변 생성 단계는 건너뜁니다.")
 
-from langchain_openai import ChatOpenAI
+from typing import Any
+
+import torch
+from langchain_core.language_models.chat_models import SimpleChatModel
+from transformers import AutoModelForCausalLM, AutoTokenizer
+
+
+class LocalChat(SimpleChatModel):
+    """HF transformers 모델을 LangChain ChatModel 로 감싼다 (6_generator_enhancement.py 와 동일)."""
+    model: Any = None
+    tokenizer: Any = None
+    max_new_tokens: int = 500
+
+    @property
+    def _llm_type(self) -> str:
+        return "local-hf-chat"
+
+    def _call(self, messages, stop=None, run_manager=None, **kwargs) -> str:
+        role = {"human": "user", "system": "system", "ai": "assistant"}
+        chat = [{"role": role[m.type], "content": m.content} for m in messages]
+        # Qwen3 는 thinking 을 끈다 (다른 모델 템플릿은 이 인자를 무시)
+        text = self.tokenizer.apply_chat_template(chat, tokenize=False, add_generation_prompt=True, enable_thinking=False)
+        inputs = self.tokenizer(text, return_tensors="pt").to(self.model.device)
+        with torch.no_grad():
+            out = self.model.generate(**inputs, max_new_tokens=self.max_new_tokens, do_sample=False,
+                                      temperature=None, top_p=None, top_k=None)
+        return self.tokenizer.decode(out[0][inputs["input_ids"].shape[1]:], skip_special_tokens=True).strip()
+
+
+print(f"\n[load] LLM {MODEL_ID}")
+tokenizer = AutoTokenizer.from_pretrained(MODEL_ID)
+model = AutoModelForCausalLM.from_pretrained(
+    MODEL_ID, dtype=torch.bfloat16 if torch.cuda.is_available() else torch.float32, device_map="auto").eval()
 
 retriever = vectorstore.as_retriever(search_type="mmr", search_kwargs={"k": 5, "lambda_mult": 0.15})
 docs = retriever.invoke(query)
@@ -100,7 +136,7 @@ template = """Answer the question based only on the following context:
 Question: {question}
 """
 prompt = ChatPromptTemplate.from_template(template)
-llm = ChatOpenAI(model="gpt-4o-mini", temperature=0, max_tokens=500)
+llm = LocalChat(model=model, tokenizer=tokenizer)
 
 
 def format_docs(docs):

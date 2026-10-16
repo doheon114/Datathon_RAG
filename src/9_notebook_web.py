@@ -8,7 +8,7 @@
  - 생성: 로컬 LLM(Qwen3.8-27B 4-bit, thinking 끔) 토큰 스트리밍
  - 형광펜: 답변의 각 주장과 가장 잘 맞는 발췌문 문장(표는 행)만 골라(evidence.py) 근거 패널·원문 뷰어에 표시
 
-사전 준비: 8_build_index.py 로 ./db/chromadb 의 'notebook' 컬렉션과 ./db/pages.json 생성, export OPENAI_API_KEY=sk-... (질의 임베딩 전용)
+사전 준비: 8_build_index.py 로 ./db/chromadb 의 'notebook' 컬렉션과 ./db/pages.json 생성 (API 키 불필요. 질의 임베딩도 로컬 모델)
 실행: CUDA_VISIBLE_DEVICES=1 .venv/bin/python src/9_notebook_web.py [--port 8800] [--model Qwen/Qwen3.8-27B] [--bf16] [--public]
  - --public: 외부 공개용 보호 (질문 IP당 10분에 12회, 대기열 6개, 원문 쪽 조회 500회 제한)
  - --no-viewer: 원문 PDF 뷰어(/api/pdfpage, /api/locate) 끄기
@@ -40,7 +40,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from langchain_community.vectorstores import Chroma
-from langchain_openai import OpenAIEmbeddings
+from embedding_model import EMBEDDING_ID, load_embeddings
 from evidence import select_evidence, split_units
 from pdf_view import PdfStore
 from pydantic import BaseModel, Field
@@ -48,9 +48,6 @@ from rank_bm25 import BM25Okapi
 from sentence_transformers import CrossEncoder
 from transformers import (AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig, StoppingCriteria, StoppingCriteriaList,
                           TextIteratorStreamer)
-
-if not os.environ.get("OPENAI_API_KEY"):
-    sys.exit("OPENAI_API_KEY 환경변수가 없습니다 (Chroma 질의 임베딩용). export OPENAI_API_KEY=sk-... 후 다시 실행하세요.")
 
 argv = sys.argv[1:]
 PORT = int(argv[argv.index("--port") + 1]) if "--port" in argv else 8800
@@ -152,7 +149,7 @@ with open(os.path.join(ROOT, "db", "pages.json"), encoding="utf-8") as fh:
     PAGES = json.load(fh)  # {source_id: {name, lang, pages: {"72": text}}}
 SOURCE_NAMES = {sid: v["name"] for sid, v in PAGES.items()}
 
-embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
+embeddings = load_embeddings()  # 8_build_index.py 와 같은 로컬 모델이어야 한다
 vectorstore = Chroma(collection_name="notebook", embedding_function=embeddings, persist_directory=os.path.join(ROOT, "db", "chromadb"))
 _all = vectorstore._collection.get(include=["documents", "metadatas"])
 DOC_TEXT, DOC_META = _all["documents"], _all["metadatas"]
@@ -177,7 +174,7 @@ def tokenize(text: str):
 bm25 = BM25Okapi([tokenize(t) for t in DOC_TEXT])
 DOC_SRC = np.array([m["source"] for m in DOC_META])
 
-print(f"[load] LLM {MODEL_ID} / reranker {RERANKER_ID} / {N_CHUNKS} chunks / sources {list(SOURCE_NAMES)}", flush=True)
+print(f"[load] LLM {MODEL_ID} / reranker {RERANKER_ID} / embedding {EMBEDDING_ID} / {N_CHUNKS} chunks / sources {list(SOURCE_NAMES)}", flush=True)
 reranker = CrossEncoder(RERANKER_ID, device="cuda", max_length=1024)
 tokenizer = AutoTokenizer.from_pretrained(MODEL_ID)
 model = AutoModelForCausalLM.from_pretrained(
@@ -463,7 +460,7 @@ def index():
 @app.get("/api/info")
 def info():
     return {
-        "llm": MODEL_ID, "reranker": RERANKER_ID, "public": PUBLIC, "viewer": VIEWER,
+        "llm": MODEL_ID, "reranker": RERANKER_ID, "embedding": EMBEDDING_ID, "public": PUBLIC, "viewer": VIEWER,
         "sources": [{"id": sid, "name": v["name"], "lang": v["lang"], "pages": len(v["pages"]), "chunks": SRC_CHUNKS[sid], "tables": SRC_TABLES[sid],
                      "priority": SOURCE_PRIORITY.get(sid, 9)}
                     for sid, v in sorted(PAGES.items(), key=lambda kv: SOURCE_PRIORITY.get(kv[0], 9))],

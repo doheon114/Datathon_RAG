@@ -1,7 +1,7 @@
 # 주요 의존성 (개발 환경에서 확인한 버전 기준, 필요 시 범위를 조정하세요)
 torch>=2.4
 transformers>=4.51
-sentence-transformers>=3
+sentence-transformers>=3    # 로컬 임베딩(BAAI/bge-m3) · reranker
 chromadb>=1.0
 fastapi
 uvicorn
@@ -11,11 +11,9 @@ pymupdf
 pypdf
 numpy
 tiktoken
-openai
 langchain-core
 langchain-community
 langchain-classic
-langchain-openai
 langchain-huggingface
 langchain-text-splitters
 bitsandbytes            # Qwen3.8-27B 4-bit 로딩

@@ -13,7 +13,7 @@
 | 2 | 대한심부전학회 2022 심부전 진료지침 전면 개정판 | https://www.kshf.or.kr/uploaded/board/ksnotice/_48a0e6e928eeac0985de3bb89c43ba5b1.pdf (공지: https://www.kshf.or.kr/news/news_01.php?boardid=ksnotice&mode=view&idx=55) |
 | 3 | 2022 AHA/ACC/HFSA Guideline for the Management of Heart Failure (Circulation 2022;145:e895–e1032) | https://doi.org/10.1161/CIR.0000000000001063 (PDF: https://www.ahajournals.org/doi/pdf/10.1161/CIR.0000000000001063) |
 
-권장 파일명(루트에 `*.pdf`로만 있으면 `8_build_index.py`가 전부 읽습니다. `1_pdf_to_txt.py`는 파일명에 `심부전학회`가 들어간 PDF를 찾습니다):
+권장 파일명(루트에 `*.pdf`로만 있으면 `8_build_index.py`가 전부 읽습니다. `1`~`7` 튜토리얼은 파일명에 `심부전학회` 또는 `kshf`가 들어간 PDF를 찾고, `8_build_index.py`는 파일명의 `kshf`·`심부전학회` / `ESC` / `AHA`·`HFSA`로 자료를 구분합니다):
 - `(대한심부전학회) 2022 심부전 진료지침 전면 개정판_수정본.pdf`
 - `2026 ESC Guidelines for the management of heart failure.pdf`
 - `heidenreich-et-al-2022-aha-acc-hfsa-guideline-for-the-management-of-heart-failure.pdf`
@@ -25,6 +25,7 @@
 | 파일 | 역할 |
 |---|---|
 | `src/1`~`7_*.py` | 단계별 튜토리얼(PDF→텍스트→분할→임베딩→벡터스토어→검색→생성→간단 웹) |
+| `src/embedding_model.py` | 로컬 임베딩 모델 로더 (기본 `BAAI/bge-m3`, 환경변수 `EMBEDDING_MODEL` 로 변경). 인덱스 생성과 질의가 같은 모델을 쓰도록 공유 |
 | `src/8_build_index.py` | 본 인덱스 생성: 정제 · 큰 청크 · 표 마크다운 · Chroma `notebook` 컬렉션 · `db/pages.json` |
 | `src/9_notebook_web.py` | FastAPI 서버: 의미검색 + BM25 → RRF → `bge-reranker-v2-m3` → 로컬 Qwen3.8-27B(4-bit) 스트리밍 답변 |
 | `src/evidence.py`, `src/pdf_view.py` | 답변 주장별 근거 문장/표 행 선택, 쪽 이미지·형광펜 좌표 |
@@ -38,8 +39,7 @@
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt                 # CUDA 빌드 torch 는 환경에 맞게 따로 설치
 
-export OPENAI_API_KEY=sk-...                    # 임베딩(text-embedding-3-small)에만 사용. 파일에 저장 금지
-python src/8_build_index.py                     # PDF → db/ 인덱스 (최초 1회)
+python src/8_build_index.py                     # PDF → db/ 인덱스 (최초 1회). 임베딩은 로컬 BAAI/bge-m3 (API 키 불필요, 첫 실행 때 약 2.2GB 다운로드)
 
 cd emr && npm install && npm run build && cd ..  # EMR 화면 빌드 (서버가 /emr 로 서빙)
 
@@ -49,7 +49,8 @@ CUDA_VISIBLE_DEVICES=0 python src/9_notebook_web.py --port 8800
 
 - 모든 명령은 프로젝트 루트에서 실행합니다(경로는 루트 기준).
 - 노트북 화면 `http://localhost:8800/`, EMR 화면 `http://localhost:8800/emr/`
-- Qwen3.8-27B(4-bit, 약 18GB) + reranker 를 올릴 GPU(약 24GB 이상)가 필요합니다. `--bf16` 으로 양자화를 끄거나 `--model` 로 다른 모델을 지정할 수 있고, `--public` 은 외부 노출용(요청 제한·대기열 적용)입니다. 답변 한 건에 수십 초 걸립니다.
+- 외부 API 를 전혀 쓰지 않습니다. 임베딩(`BAAI/bge-m3`) · reranker · LLM 이 모두 로컬에서 돌고, 환자 정보와 질문이 서버 밖으로 나가지 않습니다. 임베딩 모델을 바꾸면(`EMBEDDING_MODEL`) `8_build_index.py` 로 인덱스를 다시 만들어야 합니다.
+- Qwen3.8-27B(4-bit, 약 18GB) + reranker + 임베딩 모델(약 1.2GB) 을 올릴 GPU(약 24GB 이상)가 필요합니다. `--bf16` 으로 양자화를 끄거나 `--model` 로 다른 모델을 지정할 수 있고, `--public` 은 외부 노출용(요청 제한·대기열 적용)입니다. 답변 한 건에 수십 초 걸립니다.
 
 ## 데이터에 관하여
 

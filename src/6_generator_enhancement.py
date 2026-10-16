@@ -2,11 +2,10 @@
 
 비교: baseline(유사도 top-5 + 기본 프롬프트) vs enhanced(k=20 -> rerank top-5 -> LongContextReorder + 출처 인용 프롬프트)
 
-사전 준비: 4_vectorstore.py 로 ./db/chromadb 생성, export OPENAI_API_KEY=sk-... (쿼리 임베딩에만 사용, LLM 은 로컬)
+사전 준비: 4_vectorstore.py 로 ./db/chromadb 생성 (API 키 불필요. 임베딩·reranker·LLM 모두 로컬)
 실행: CUDA_VISIBLE_DEVICES=1 .venv/bin/python src/6_generator_enhancement.py ["질문"] [--compress] [--model Qwen/Qwen3-8B]
 """
 import logging
-import os
 import sys
 import time
 import warnings
@@ -24,11 +23,9 @@ from langchain_community.vectorstores import Chroma
 from langchain_core.language_models.chat_models import SimpleChatModel
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate
-from langchain_openai import OpenAIEmbeddings
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
-if not os.environ.get("OPENAI_API_KEY"):
-    sys.exit("OPENAI_API_KEY 환경변수가 없습니다 (Chroma 쿼리 임베딩용). export OPENAI_API_KEY=sk-... 후 다시 실행하세요.")
+from embedding_model import load_embeddings
 
 argv = sys.argv[1:]
 MODEL_ID = argv[argv.index("--model") + 1] if "--model" in argv else "Qwen/Qwen3-14B"
@@ -71,7 +68,7 @@ model = AutoModelForCausalLM.from_pretrained(MODEL_ID, dtype=torch.bfloat16, dev
 llm = LocalChat(model=model, tokenizer=tokenizer)
 
 # ---------- 벡터스토어 / Retriever ----------
-embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
+embeddings = load_embeddings()  # 4_vectorstore.py 와 같은 로컬 모델
 vectorstore = Chroma(collection_name="heart_failure", embedding_function=embeddings, persist_directory="./db/chromadb")
 
 # 검색은 넉넉하게(recall) -> Reranker 로 상위 5개만(precision)

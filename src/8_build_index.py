@@ -7,7 +7,7 @@
  - 표: PyMuPDF find_tables 로 감지해 마크다운 표(+캡션)로 변환, 쪼개지 않고 독립 청크(kind=table)로 저장.
    너무 긴 표는 행 단위로 나누되 머리글 행을 반복. 본문 텍스트에서는 표 영역을 제외해 중복을 막는다.
 
-사전 준비: export OPENAI_API_KEY=sk-...
+사전 준비: 없음 (API 키 불필요. 임베딩은 로컬 모델 BAAI/bge-m3, GPU 가 있으면 GPU 사용)
 실행: .venv/bin/python src/8_build_index.py   (컬렉션이 있으면 지우고 다시 만든다)
 """
 import glob
@@ -26,11 +26,9 @@ import chromadb
 import pymupdf
 from langchain_community.vectorstores import Chroma
 from langchain_core.documents import Document
-from langchain_openai import OpenAIEmbeddings
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
-if not os.environ.get("OPENAI_API_KEY"):
-    sys.exit("OPENAI_API_KEY 환경변수가 없습니다. export OPENAI_API_KEY=sk-... 후 다시 실행하세요.")
+from embedding_model import EMBEDDING_ID, load_embeddings
 
 DB_DIR, COLLECTION, PAGES_JSON = "./db/chromadb", "notebook", "./db/pages.json"
 CHUNK = {"ko": (900, 150), "en": (2400, 300)}  # (chunk_size, overlap) 글자 수 기준
@@ -47,11 +45,12 @@ KO_HEADER = re.compile(r"^\s*(\d+\s*\|\s*심부전 진료지침|.*\s\|\s*\d+|Cha
 
 def source_info(fname: str):
     n = unicodedata.normalize("NFC", fname)
-    if "심부전학회" in n:
+    low = n.lower()
+    if "심부전학회" in n or "kshf" in low:
         return "ksh2022", "대한심부전학회 2022 심부전 진료지침", "ko"
-    if "ESC" in n:
+    if "esc" in low:
         return "esc2026", "2026 ESC Heart Failure Guidelines", "en"
-    if "AHA" in n or "heidenreich" in n.lower():
+    if "aha" in low or "hfsa" in low or "heidenreich" in low:
         return "aha2022", "2022 AHA/ACC/HFSA Heart Failure Guideline", "en"
     slug = re.sub(r"\W+", "_", n.rsplit(".", 1)[0])[:30]
     return slug, n.rsplit(".", 1)[0], "ko" if HANGUL.search(n) else "en"
@@ -168,8 +167,20 @@ def extract_page(page, lang: str):
 
 def main():
     docs, pages_out = [], {}
-    for f in sorted(glob.glob("*.pdf")):
+    pdfs = sorted(glob.glob("*.pdf"))
+    if not pdfs:
+        sys.exit(f"현재 폴더({os.getcwd()})에 PDF 가 없습니다. 진료지침 PDF 3종을 프로젝트 루트(README 와 같은 폴더)에 두고, "
+                 "프로젝트 루트에서 'python src/8_build_index.py' 를 실행하세요. (README 「근거 자료」 참고)")
+    print(f"PDF {len(pdfs)}개: {pdfs}")
+    seen = {}  # 내용 지문 -> 파일명. 같은 PDF 를 다른 이름으로 두 번 넣은 경우를 걸러낸다
+    for f in pdfs:
         sid, name, lang = source_info(f)
+        with pymupdf.open(f) as _pdf:
+            fp = (len(_pdf), "".join(_pdf[i].get_text() for i in range(min(3, len(_pdf)))))
+        if fp in seen:
+            print(f"[경고] '{f}' 는 '{seen[fp]}' 와 내용이 같은 PDF 입니다 (쪽수 {fp[0]}, 첫 쪽 텍스트 동일). 건너뜁니다.")
+            continue
+        seen[fp] = f
         splitter = RecursiveCharacterTextSplitter(
             chunk_size=CHUNK[lang][0], chunk_overlap=CHUNK[lang][1], length_function=len
         )
@@ -201,6 +212,8 @@ def main():
                     "source": sid, "source_name": name, "page": pno, "lang": lang, "kind": "text", "caption": ""}))
         print(f"{name}: {len(pdf)}쪽, 표 청크 {n_tab}개, 참고문헌 청크 {n_ref}개 제외")
 
+    if not docs:
+        sys.exit("PDF 에서 텍스트 청크를 하나도 만들지 못했습니다 (스캔 이미지 PDF 이거나 텍스트 추출 실패).")
     print(f"총 청크: {len(docs)} (평균 {sum(len(d.page_content) for d in docs) // len(docs)}자)")
     with open(PAGES_JSON, "w", encoding="utf-8") as fh:
         json.dump(pages_out, fh, ensure_ascii=False)
@@ -208,9 +221,10 @@ def main():
     client = chromadb.PersistentClient(path=DB_DIR)
     if COLLECTION in [c.name for c in client.list_collections()]:
         client.delete_collection(COLLECTION)
+    print(f"[embedding] {EMBEDDING_ID} 로 {len(docs)}개 청크 임베딩 중...", flush=True)
     Chroma.from_documents(
         docs,
-        OpenAIEmbeddings(model="text-embedding-3-small"),
+        load_embeddings(),
         collection_name=COLLECTION,
         persist_directory=DB_DIR,
         collection_metadata={"hnsw:space": "cosine"},

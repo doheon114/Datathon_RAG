@@ -1,6 +1,6 @@
 """RAG 데모 웹사이트 (FastAPI). Baseline vs Enhanced(rerank + reorder + 출처 인용) 답변을 나란히 비교한다.
 
-사전 준비: 4_vectorstore.py 로 ./db/chromadb 생성, export OPENAI_API_KEY=sk-... (쿼리 임베딩에만 사용, LLM 은 로컬)
+사전 준비: 4_vectorstore.py 로 ./db/chromadb 생성 (API 키 불필요. 임베딩·reranker·LLM 모두 로컬)
 실행: CUDA_VISIBLE_DEVICES=1 .venv/bin/python src/7_rag_web.py [--port 8800] [--model Qwen/Qwen3-14B] [--public]
  - --public: 외부 공개용 보호 (IP당 10분에 12회 제한, 대기열 6개 제한, 원문 PDF 다운로드 /pdf 비활성화)
 접속: http://<서버>:8800
@@ -31,12 +31,10 @@ from langchain_community.vectorstores import Chroma
 from langchain_core.language_models.chat_models import SimpleChatModel
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate
-from langchain_openai import OpenAIEmbeddings
 from pydantic import BaseModel, Field
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
-if not os.environ.get("OPENAI_API_KEY"):
-    sys.exit("OPENAI_API_KEY 환경변수가 없습니다 (Chroma 쿼리 임베딩용). export OPENAI_API_KEY=sk-... 후 다시 실행하세요.")
+from embedding_model import load_embeddings
 
 argv = sys.argv[1:]
 PORT = int(argv[argv.index("--port") + 1]) if "--port" in argv else 8800
@@ -48,12 +46,13 @@ SOURCE_NAME = "2022 심부전 진료지침"
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # 프로젝트 루트(src/ 의 상위)
 
 
-def find_pdf(keyword: str) -> str:
+def find_pdf(*keywords: str) -> str:
+    """파일명에 keywords 중 하나가 들어간 PDF (대소문자 무시)."""
     # 파일명이 NFD로 저장돼 있어 한글 경로를 그대로 쓰면 못 찾는다 -> NFC로 정규화해 비교
     for f in glob.glob(os.path.join(ROOT, "*.pdf")):
-        if keyword in unicodedata.normalize("NFC", f):
+        if any(k.lower() in unicodedata.normalize("NFC", f).lower() for k in keywords):
             return f
-    raise FileNotFoundError(keyword)
+    raise FileNotFoundError(" / ".join(keywords))
 
 
 # ---------- 로컬 LLM (HF transformers) 을 LangChain ChatModel 로 감싸기 ----------
@@ -86,7 +85,7 @@ tokenizer = AutoTokenizer.from_pretrained(MODEL_ID)
 model = AutoModelForCausalLM.from_pretrained(MODEL_ID, dtype=torch.bfloat16, device_map="cuda").eval()
 llm = LocalChat(model=model, tokenizer=tokenizer)
 
-embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
+embeddings = load_embeddings()  # 4_vectorstore.py 와 같은 로컬 모델
 vectorstore = Chroma(collection_name="heart_failure", embedding_function=embeddings, persist_directory="./db/chromadb")
 N_CHUNKS = vectorstore._collection.count()
 
@@ -181,7 +180,7 @@ def index():
 def pdf():
     if PUBLIC:
         raise HTTPException(404, "공개 모드에서는 원문 PDF를 제공하지 않습니다.")
-    return FileResponse(find_pdf("심부전학회"), media_type="application/pdf")
+    return FileResponse(find_pdf("심부전학회", "kshf"), media_type="application/pdf")
 
 
 @app.get("/api/info")

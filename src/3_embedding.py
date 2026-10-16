@@ -1,39 +1,38 @@
-"""OpenAIEmbeddings로 (1) 튜토리얼 예제 임베딩/코사인 유사도, (2) PDF 청크 임베딩 + 유사도 검색.
+"""로컬 임베딩 모델(BAAI/bge-m3)로 (1) 튜토리얼 예제 임베딩/코사인 유사도, (2) PDF 청크 임베딩 + 유사도 검색.
 
-사전 준비: export OPENAI_API_KEY=sk-...
+사전 준비: 없음 (API 키 불필요. 처음 실행 시 임베딩 모델을 HuggingFace 에서 내려받는다)
 실행: .venv/bin/python src/3_embedding.py ["검색 질문"]
-산출물: chunk_embeddings.npy (청크 x 1536), chunks.json (청크 텍스트 + page 메타데이터)
+산출물: chunk_embeddings.npy (청크 x 1024), chunks.json (청크 텍스트 + page 메타데이터)
 """
 import glob
 import json
 import logging
-import os
 import sys
 import unicodedata
 
 import numpy as np
 from langchain_community.document_loaders import PyPDFLoader
-from langchain_openai import OpenAIEmbeddings
 from langchain_text_splitters import RecursiveCharacterTextSplitter
+
+from embedding_model import EMBEDDING_ID, load_embeddings
 
 logging.disable(logging.CRITICAL)  # pypdf의 fontTools 경고 억제
 
-if not os.environ.get("OPENAI_API_KEY"):
-    sys.exit("OPENAI_API_KEY 환경변수가 없습니다. export OPENAI_API_KEY=sk-... 후 다시 실행하세요.")
-
-embeddings_model = OpenAIEmbeddings(model="text-embedding-3-small")  # 1536차원
+embeddings_model = load_embeddings()  # BAAI/bge-m3, 1024차원 (정규화됨)
+print(f"[embedding] {EMBEDDING_ID}")
 
 
 def cos_sim(A, B):
     return np.dot(A, B) / (np.linalg.norm(A) * np.linalg.norm(B))
 
 
-def find_pdf(keyword: str) -> str:
+def find_pdf(*keywords: str) -> str:
+    """파일명에 keywords 중 하나가 들어간 PDF (대소문자 무시)."""
     # 파일명이 NFD로 저장돼 있어 한글 경로를 그대로 쓰면 못 찾는다 -> NFC로 정규화해 비교
     for f in glob.glob("*.pdf"):
-        if keyword in unicodedata.normalize("NFC", f):
+        if any(k.lower() in unicodedata.normalize("NFC", f).lower() for k in keywords):
             return f
-    raise FileNotFoundError(keyword)
+    raise FileNotFoundError(" / ".join(keywords))
 
 
 # ---------- 1. 튜토리얼 예제: 문장 5개 + 질의 코사인 유사도 ----------
@@ -48,7 +47,7 @@ for s, e in zip(sentences, embeddings):
     print(f"{cos_sim(e, embedded_query):.4f}  {s}")
 
 # ---------- 2. PDF 청크 임베딩 ----------
-pdf_filepath = find_pdf("심부전학회")
+pdf_filepath = find_pdf("심부전학회", "kshf")
 pages = PyPDFLoader(pdf_filepath).load()
 text_splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=100, length_function=len)
 docs = text_splitter.split_documents(pages)
